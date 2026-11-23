@@ -16,7 +16,7 @@ from .config import (DEFAULT_APP_DIR, DEFAULT_EXCLUDE_DIR_NAMES, DEFAULT_EXCLUDE
 from .engine import AskRequest, Engine, PHASE_FULL, PHASE_PARTIAL, PHASE_WALK
 from .models import Issue, Reason, ScanResult
 from .report import export_groups, export_issues, fmt_size, fmt_time
-from .store import RunMarker
+from .store import RunMarker, clear_records
 from .winutil import long_path
 
 try:
@@ -322,6 +322,15 @@ class App(tk.Tk):
             ttk.Label(opt, text=label).grid(row=i, column=0, sticky="w", pady=2)
             ttk.Entry(opt, textvariable=var, width=28).grid(row=i, column=1, sticky="ew", padx=(8, 0), pady=2)
         opt.columnconfigure(1, weight=1)
+
+        rec = ttk.LabelFrame(f, text="남기는 기록", padding=6)
+        rec.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        self.use_cache = tk.BooleanVar(value=True)
+        ttk.Checkbutton(rec, text="해시 캐시 사용 (다시 검사할 때 빨라지지만, 검사한 파일의 경로가 저장됨)",
+                        variable=self.use_cache).pack(side="left")
+        self.clear_btn = ttk.Button(rec, text="저장된 기록 지우기…", command=self._clear_records)
+        self.clear_btn.pack(side="right")
+        ttk.Label(rec, text=f"저장 위치: {self.app_dir}", foreground="#666").pack(side="right", padx=8)
         f.rowconfigure(1, weight=1)
         f.rowconfigure(3, weight=1)
         self._mode_changed()
@@ -433,9 +442,32 @@ class App(tk.Tk):
             exclude_dir_names=[s.strip() for s in self.excl_names.get().split(",") if s.strip()],
             min_size=int(min_kb * 1024), max_size=int(max_mb * 1024 * 1024) if max_mb else None,
             app_dir=self.app_dir, quarantine_dir=self.qdir.get().strip() or DEFAULT_QUARANTINE_DIR,
-            limits=limits)
+            use_cache=self.use_cache.get(), limits=limits)
         cfg.validate()
         return cfg
+
+    def _clear_records(self):
+        if self.busy:
+            messagebox.showinfo("기록 지우기", "검사나 정리 작업이 끝난 뒤에 지울 수 있습니다.", parent=self)
+            return
+        if not messagebox.askyesno(
+                "기록 지우기",
+                "다음 기록을 지웁니다. 되돌릴 수 없습니다.\n\n"
+                "· 해시 캐시 (검사한 파일의 경로·해시)\n"
+                "· 작업 기록 (휴지통·격리 폴더로 옮긴 파일 목록)\n\n"
+                "격리 폴더에 옮겨 둔 파일은 지우지 않습니다. 계속할까요?", parent=self):
+            return
+        include_ignore = False
+        if os.path.isfile(os.path.join(self.app_dir, "ignore.json")):
+            include_ignore = messagebox.askyesno(
+                "기록 지우기", "무시 목록도 지울까요?\n(지우면 무시했던 묶음이 다음 검사에 다시 나타납니다)",
+                default="no", parent=self)
+        removed, failed = clear_records(self.app_dir, include_ignore)
+        msg = f"파일 {len(removed)}개를 지웠습니다." if removed else "지울 기록이 없었습니다."
+        if failed:
+            messagebox.showwarning("기록 지우기", msg + "\n\n지우지 못한 파일:\n" + "\n".join(failed[:10]), parent=self)
+        else:
+            messagebox.showinfo("기록 지우기", msg, parent=self)
 
     # ---- 검사
 
@@ -570,7 +602,7 @@ class App(tk.Tk):
         self.busy = what
         self.start_btn.config(state="disabled" if what else "normal")
         self.cancel_btn.config(state="normal" if what else "disabled")
-        for b in self.act_buttons:
+        for b in self.act_buttons + [self.clear_btn]:
             b.config(state="disabled" if what else "normal")
 
     # ---- 결과 표

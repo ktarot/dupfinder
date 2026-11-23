@@ -242,6 +242,14 @@ class Engine:
             self.pool.shutdown()
             prevent_sleep(False)
             if self.cache:
+                if reason is Reason.COMPLETED:  # 끝까지 본 폴더만 정리(중간에 멈추면 못 본 파일이 있음)
+                    try:
+                        roots = [r for i, (r, _) in enumerate(self.roots) if i not in self.root_dead]
+                        n = self.cache.prune(roots, (e.path for e in self.entries))
+                        if n:
+                            self._log(f"사라진 파일의 캐시 기록 {n:,}건 정리")
+                    except Exception as e:  # noqa: BLE001
+                        self._log(f"캐시 정리 실패: {e!r}")
                 try:
                     self.cache.close()
                 except Exception as e:  # noqa: BLE001  캐시 저장 실패는 검사 결과에 영향 없음

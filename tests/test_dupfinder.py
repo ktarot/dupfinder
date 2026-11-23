@@ -4,6 +4,7 @@ from __future__ import annotations
 import ctypes
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,7 @@ from dupfinder.config import Limits, ScanConfig  # noqa: E402
 from dupfinder.engine import Engine  # noqa: E402
 from dupfinder.hashing import hash_file  # noqa: E402
 from dupfinder.models import Reason  # noqa: E402
+from dupfinder.store import IgnoreList, clear_records  # noqa: E402
 from dupfinder.winutil import can_recycle  # noqa: E402
 
 
@@ -118,6 +120,55 @@ class TestDetection(Base):
         r = Engine(self.cfg()).run()
         self.assertEqual(len(r.groups), 1)
         self.assertGreaterEqual(r.counts["cache_hits"], 2)
+
+    def cache_paths(self):
+        db = sqlite3.connect(os.path.join(self.app, "cache.db"))
+        try:
+            return {p for (p,) in db.execute("SELECT path FROM h2")}
+        finally:
+            db.close()
+
+    def test_cache_disabled_leaves_no_cache_file(self):
+        self.write("a.bin", data(5000))
+        self.write("b.bin", data(5000))
+        r = Engine(self.cfg(use_cache=False)).run()
+        self.assertEqual(len(r.groups), 1)
+        self.assertFalse(os.path.exists(os.path.join(self.app, "cache.db")))
+
+    def test_cache_prunes_removed_files(self):
+        a = self.write("a.bin", data(5000))
+        b = self.write("b.bin", data(5000))
+        c = self.write("c.bin", data(5000))
+        Engine(self.cfg()).run()
+        self.assertEqual(self.cache_paths(), {os.path.normcase(p) for p in (a, b, c)})
+        os.remove(c)
+        Engine(self.cfg()).run()
+        self.assertEqual(self.cache_paths(), {os.path.normcase(p) for p in (a, b)})
+
+    def test_cache_prune_keeps_other_roots(self):
+        a = self.write("a.bin", data(5000))
+        b = self.write("b.bin", data(5000))
+        other = os.path.join(self.tmp, "other")
+        os.makedirs(other)
+        Engine(self.cfg()).run()
+        Engine(self.cfg(roots=[other])).run()   # 다른 폴더만 검사해도 기존 기록은 그대로
+        self.assertEqual(self.cache_paths(), {os.path.normcase(p) for p in (a, b)})
+
+    def test_clear_records(self):
+        self.write("a.bin", data(5000))
+        self.write("b.bin", data(5000))
+        Engine(self.cfg()).run()
+        os.makedirs(os.path.join(self.app, "logs"))
+        with open(os.path.join(self.app, "logs", "actions-20260101.jsonl"), "w") as f:
+            f.write("{}\n")
+        IgnoreList(self.app).add(["abc"])
+        removed, failed = clear_records(self.app)
+        self.assertEqual(failed, [])
+        self.assertFalse(os.path.exists(os.path.join(self.app, "cache.db")))
+        self.assertFalse(os.path.exists(os.path.join(self.app, "logs")))
+        self.assertTrue(os.path.exists(os.path.join(self.app, "ignore.json")))   # 묻지 않으면 남김
+        clear_records(self.app, include_ignore=True)
+        self.assertFalse(os.path.exists(os.path.join(self.app, "ignore.json")))
 
     def test_compare_mode(self):
         base = os.path.join(self.tmp, "base")

@@ -6,6 +6,8 @@ import os
 import sqlite3
 import time
 
+from .config import norm
+
 
 class HashCache:
     """경로·크기·수정일이 그대로면 저장된 해시를 다시 쓴다."""
@@ -50,11 +52,47 @@ class HashCache:
             self._pending.clear()
         self._last_flush = time.monotonic()
 
+    def prune(self, roots, seen_paths) -> int:
+        """검사를 끝까지 마친 폴더 아래에서 이번에 보이지 않은 파일(지워졌거나 옮겨진 파일)의 기록을 지운다."""
+        self.flush()
+        prefixes = [norm(r) for r in roots]
+        seen = {os.path.normcase(p) for p in seen_paths}
+        gone = [(p,) for (p,) in self.db.execute("SELECT path FROM h2")
+                if p not in seen and any(p == q or p.startswith(q + os.sep) for q in prefixes)]
+        if gone:
+            self.db.executemany("DELETE FROM h2 WHERE path=?", gone)
+            self.db.commit()
+        return len(gone)
+
     def close(self) -> None:
         try:
             self.flush()
         finally:
             self.db.close()
+
+
+def clear_records(app_dir: str, include_ignore: bool = False) -> tuple[list[str], list[str]]:
+    """해시 캐시와 작업 기록(필요하면 무시 목록까지)을 지운다. (지운 것, 못 지운 것)을 돌려준다."""
+    targets = [os.path.join(app_dir, n) for n in ("cache.db", "cache.db-journal")]
+    logs = os.path.join(app_dir, "logs")
+    if os.path.isdir(logs):
+        targets += [os.path.join(logs, n) for n in os.listdir(logs)]
+    if include_ignore:
+        targets.append(os.path.join(app_dir, "ignore.json"))
+    removed, failed = [], []
+    for p in targets:
+        if not os.path.isfile(p):
+            continue
+        try:
+            os.remove(p)
+            removed.append(p)
+        except OSError as e:
+            failed.append(f"{p} ({e.strerror or e})")
+    try:
+        os.rmdir(logs)
+    except OSError:
+        pass
+    return removed, failed
 
 
 class IgnoreList:
