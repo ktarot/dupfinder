@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dupfinder import actions  # noqa: E402
 from dupfinder.actions import QUARANTINE, ActionRunner, auto_select, plan  # noqa: E402
-from dupfinder.config import Limits, ScanConfig  # noqa: E402
+from dupfinder.config import Limits, ScanConfig, parse_exts  # noqa: E402
 from dupfinder.engine import Engine  # noqa: E402
 from dupfinder.hashing import hash_file  # noqa: E402
 from dupfinder.models import Reason  # noqa: E402
@@ -169,6 +169,24 @@ class TestDetection(Base):
         self.assertTrue(os.path.exists(os.path.join(self.app, "ignore.json")))   # 묻지 않으면 남김
         clear_records(self.app, include_ignore=True)
         self.assertFalse(os.path.exists(os.path.join(self.app, "ignore.json")))
+
+    def test_extension_include_and_exclude(self):
+        a = self.write("a.JPG", data(5000))
+        b = self.write("b.jpeg", data(5000))
+        c = self.write("c.txt", data(5000, seed=3))
+        d = self.write("d.log", data(5000, seed=3))
+        r = Engine(self.cfg(ext_mode="include", extensions=parse_exts("jpg, .jpeg"))).run()
+        self.assertEqual([sorted(e.path for e in g.files) for g in r.groups], [sorted([a, b])])
+        self.assertEqual(r.counts["ext_filtered"], 2)
+        r = Engine(self.cfg(ext_mode="exclude", extensions=["jpg", "jpeg"])).run()
+        self.assertEqual([sorted(e.path for e in g.files) for g in r.groups], [sorted([c, d])])
+        r = Engine(self.cfg()).run()
+        self.assertEqual(len(r.groups), 2)
+
+    def test_parse_exts_and_validation(self):
+        self.assertEqual(parse_exts(" .JPG, png;*.mp4  jpg "), ["jpg", "png", "mp4"])
+        with self.assertRaises(ValueError):
+            self.cfg(ext_mode="include", extensions=[]).validate()
 
     def test_compare_mode(self):
         base = os.path.join(self.tmp, "base")

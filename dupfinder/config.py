@@ -20,6 +20,25 @@ DEFAULT_EXCLUDE_PATHS = [
 ]
 DEFAULT_EXCLUDE_DIR_NAMES = [".git", "node_modules"]
 
+# 확장자 묶음 버튼 (이름, 확장자들)
+EXT_PRESETS = [
+    ("사진", "jpg jpeg png gif bmp webp heic heif tif tiff raw cr2 nef arw dng"),
+    ("동영상", "mp4 mov avi wmv mkv m4v webm flv mts m2ts 3gp"),
+    ("음악", "mp3 m4a aac wav flac wma ogg opus"),
+    ("문서", "hwp hwpx doc docx xls xlsx ppt pptx pdf txt rtf odt ods odp"),
+    ("압축 파일", "zip 7z rar alz egg tar gz bz2 xz"),
+]
+
+
+def parse_exts(text: str) -> list[str]:
+    """'jpg, .PNG mp4' → ['jpg', 'png', 'mp4'] (중복 제거, 순서 유지)."""
+    out = []
+    for t in text.replace(",", " ").replace(";", " ").split():
+        t = t.strip().lstrip("*").lstrip(".").lower()
+        if t and t not in out:
+            out.append(t)
+    return out
+
 
 @dataclass
 class Limits:
@@ -62,6 +81,8 @@ class ScanConfig:
     app_dir: str = DEFAULT_APP_DIR                     # 캐시·작업 기록·무시 목록
     quarantine_dir: str = DEFAULT_QUARANTINE_DIR
     use_cache: bool = True
+    ext_mode: str = "all"                              # "all" | "include"(이것만) | "exclude"(이것 빼고)
+    extensions: list[str] = field(default_factory=list)  # 점 없이 소문자
     limits: Limits = field(default_factory=Limits)
 
     def all_roots(self) -> list[tuple[str, bool]]:
@@ -88,6 +109,10 @@ class ScanConfig:
                         raise ValueError(f"기준 폴더와 대상 폴더가 겹칩니다: {b} / {t}")
         if self.min_size < 0 or (self.max_size is not None and self.max_size < self.min_size):
             raise ValueError("크기 범위가 올바르지 않습니다.")
+        if self.ext_mode not in ("all", "include", "exclude"):
+            raise ValueError("확장자 선택 방식이 올바르지 않습니다.")
+        if self.ext_mode == "include" and not self.extensions:
+            raise ValueError("'이것만 검사'를 골랐다면 확장자를 하나 이상 적으세요.")
 
 
 def norm(p: str) -> str:

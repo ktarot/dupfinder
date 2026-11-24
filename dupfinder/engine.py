@@ -289,6 +289,8 @@ class Engine:
         self.excl_paths = [norm(p) for p in cfg.exclude_paths if p.strip()]
         self.excl_names = {n.strip().lower() for n in cfg.exclude_dir_names if n.strip()}
         self.own = [norm(p) for p in cfg.own_dirs()]
+        self.ext_set = {e.lstrip(".").lower() for e in cfg.extensions}
+        self.ext_filtered = 0
         self.visited: set = set()
         self.vlock = threading.Lock()
         self._next_monitor = self._next_root_check = self._next_progress = 0.0
@@ -399,6 +401,11 @@ class Engine:
         for fp, size, mtime, birth, attrs in files:
             if size < cfg.min_size or (cfg.max_size is not None and size > cfg.max_size):
                 continue
+            if cfg.ext_mode != "all":
+                ext = os.path.splitext(fp)[1].lstrip(".").lower()
+                if (ext in self.ext_set) != (cfg.ext_mode == "include"):
+                    self.ext_filtered += 1
+                    continue
             if birth > self.start_wall:  # R5-B5
                 self.created_after += 1
                 continue
@@ -762,7 +769,7 @@ class Engine:
         counts = {
             "found": len(self.entries), "processed": n[State.PROCESSED], "skipped": n[State.SKIPPED],
             "failed": n[State.FAILED], "unprocessed": n[None], "dirs": self.dirs_done,
-            "created_after": self.created_after, "hardlinks": len(self.hardlinks),
+            "created_after": self.created_after, "ext_filtered": self.ext_filtered, "hardlinks": len(self.hardlinks),
             "ignored_groups": ignored, "cache_hits": self.cache.hits if self.cache else 0,
             "abandoned": self.abandoned,
         }

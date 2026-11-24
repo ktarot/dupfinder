@@ -32,6 +32,21 @@ python -m unittest discover -s tests -v
 
 프로그램 데이터 위치: `%LOCALAPPDATA%\DupFinder` (cache.db, ignore.json, logs\). 기본 격리 폴더: `%USERPROFILE%\DupFinder_격리`.
 
+## 파일 종류(확장자) 고르기
+
+검사 설정 → 필터와 한도 → **파일 종류**에서 '모두 / 이것만 검사 / 이것은 빼고 검사' 중 하나를 고르고 확장자를 적습니다.
+대소문자와 앞의 점은 상관없습니다(`JPG`, `.jpg`, `jpg` 모두 같음). 버튼을 누르면 아래 확장자가 입력란에 덧붙습니다.
+
+| 버튼 | 확장자 |
+|---|---|
+| 사진 | jpg jpeg png gif bmp webp heic heif tif tiff raw cr2 nef arw dng |
+| 동영상 | mp4 mov avi wmv mkv m4v webm flv mts m2ts 3gp |
+| 음악 | mp3 m4a aac wav flac wma ogg opus |
+| 문서 | hwp hwpx doc docx xls xlsx ppt pptx pdf txt rtf odt ods odp |
+| 압축 파일 | zip 7z rar alz egg tar gz bz2 xz |
+
+중복은 내용으로 판단하므로, 확장자만 다른 같은 파일(예: `a.jpg`와 `a.jpeg`)은 둘 다 검사 범위에 들어 있어야 한 묶음으로 잡힙니다.
+
 ## 남기는 기록
 
 - **해시 캐시(`cache.db`)**: 검사한 파일의 경로·크기·수정일·해시. 검사 설정의 '해시 캐시 사용'을 끄면 만들지도 읽지도 않음.

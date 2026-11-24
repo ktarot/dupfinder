@@ -12,7 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from .actions import QUARANTINE, TRASH, ActionError, ActionRunner, auto_select, cleanup_partials, plan, summarize
 from .config import (DEFAULT_APP_DIR, DEFAULT_EXCLUDE_DIR_NAMES, DEFAULT_EXCLUDE_PATHS, DEFAULT_QUARANTINE_DIR,
-                     Limits, ScanConfig)
+                     EXT_PRESETS, Limits, ScanConfig, parse_exts)
 from .engine import AskRequest, Engine, PHASE_FULL, PHASE_PARTIAL, PHASE_WALK
 from .models import Issue, Reason, ScanResult
 from .report import export_groups, export_issues, fmt_size, fmt_time
@@ -321,6 +321,27 @@ class App(tk.Tk):
         for i, (label, var) in enumerate(rows):
             ttk.Label(opt, text=label).grid(row=i, column=0, sticky="w", pady=2)
             ttk.Entry(opt, textvariable=var, width=28).grid(row=i, column=1, sticky="ew", padx=(8, 0), pady=2)
+
+        r = len(rows)
+        ttk.Separator(opt).grid(row=r, column=0, columnspan=2, sticky="ew", pady=6)
+        kind = ttk.Frame(opt)
+        kind.grid(row=r + 1, column=0, columnspan=2, sticky="w")
+        ttk.Label(kind, text="파일 종류").pack(side="left", padx=(0, 8))
+        self.ext_mode = tk.StringVar(value="all")
+        for text, val in (("모두", "all"), ("이것만 검사", "include"), ("이것은 빼고 검사", "exclude")):
+            ttk.Radiobutton(kind, text=text, value=val, variable=self.ext_mode,
+                            command=self._ext_mode_changed).pack(side="left", padx=(0, 8))
+        self.exts = tk.StringVar(value="")
+        self.ext_entry = ttk.Entry(opt, textvariable=self.exts)
+        self.ext_entry.grid(row=r + 2, column=0, columnspan=2, sticky="ew", pady=(4, 2))
+        pre = ttk.Frame(opt)
+        pre.grid(row=r + 3, column=0, columnspan=2, sticky="w")
+        self.ext_buttons = [ttk.Button(pre, text=name, width=9, command=lambda e=exts: self._add_preset(e))
+                            for name, exts in EXT_PRESETS]
+        self.ext_buttons.append(ttk.Button(pre, text="비우기", width=8, command=lambda: self.exts.set("")))
+        for b in self.ext_buttons:
+            b.pack(side="left", padx=(0, 4))
+        self._ext_mode_changed()
         opt.columnconfigure(1, weight=1)
 
         rec = ttk.LabelFrame(f, text="남기는 기록", padding=6)
@@ -415,6 +436,16 @@ class App(tk.Tk):
     def _mode_changed(self):
         self.bases.set_enabled(self.mode.get() == "compare")
 
+    def _ext_mode_changed(self):
+        st = "disabled" if self.ext_mode.get() == "all" else "normal"
+        self.ext_entry.config(state=st)
+        for b in self.ext_buttons:
+            b.config(state=st)
+
+    def _add_preset(self, exts: str):
+        """버튼의 확장자를 입력란에 덧붙인다(이미 있는 것은 그대로)."""
+        self.exts.set(", ".join(parse_exts(self.exts.get() + " " + exts)))
+
     def _pick_qdir(self):
         d = filedialog.askdirectory(parent=self)
         if d:
@@ -442,7 +473,8 @@ class App(tk.Tk):
             exclude_dir_names=[s.strip() for s in self.excl_names.get().split(",") if s.strip()],
             min_size=int(min_kb * 1024), max_size=int(max_mb * 1024 * 1024) if max_mb else None,
             app_dir=self.app_dir, quarantine_dir=self.qdir.get().strip() or DEFAULT_QUARANTINE_DIR,
-            use_cache=self.use_cache.get(), limits=limits)
+            use_cache=self.use_cache.get(), ext_mode=self.ext_mode.get(),
+            extensions=parse_exts(self.exts.get()), limits=limits)
         cfg.validate()
         return cfg
 
@@ -591,6 +623,7 @@ class App(tk.Tk):
                             f"찾은 파일 {c['found']:,} = 처리 {c['processed']:,} + 건너뜀 {c['skipped']:,} + 실패 "
                             f"{c['failed']:,} + 미처리 {c['unprocessed']:,} · 하드링크 {c['hardlinks']:,} · 캐시 사용 "
                             f"{c['cache_hits']:,} · 시작 후 생성되어 제외 {c['created_after']:,} · "
+                            + (f"확장자로 제외 {c['ext_filtered']:,} · " if c['ext_filtered'] else "") +
                             f"{int(r.elapsed)}초")
         self._refresh_issue_summary()
         self.nb.select(1)
